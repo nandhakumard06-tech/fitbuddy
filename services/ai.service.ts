@@ -411,6 +411,14 @@ export async function generateTemplatePlan(
     `[ai:template] user=${user.id} goal=${profile.goal} daysPerWeek=${profile.daysPerWeek} equipment=[${profile.equipment.join(",")}] level=${profile.fitnessLevel} librarySize=${exercises.length} reason=${reason}`
   );
 
+  if (exercises.length === 0) {
+    throw new ApiError(
+      503,
+      "INTERNAL_ERROR",
+      "The exercise library is empty. Seed reference data with `npm run seed`."
+    );
+  }
+
   const byGroup = new Map<string, Exercise[]>();
   for (const exercise of exercises) {
     const list = byGroup.get(exercise.muscleGroup) ?? [];
@@ -450,15 +458,33 @@ export async function generateTemplatePlan(
     ];
 
     const selectedExercises = [...primaryExercises, ...secondaryExercises];
+    const equipmentMatch = exercises.filter(
+      (exercise) =>
+        allowed(exercise) &&
+        !usedExerciseIds.has(exercise.id) &&
+        exercise.movementType !== "CARDIO" &&
+        exercise.movementType !== "MOBILITY"
+    );
+
+    // Last resort: never emit an empty training day, which fails plan safety
+    // validation. Equipment mismatches are logged so they can be surfaced later.
+    const libraryMatch = exercises.filter(
+      (exercise) =>
+        exercise.movementType !== "CARDIO" &&
+        exercise.movementType !== "MOBILITY"
+    );
+
     const uniqueExercises = selectedExercises.length
       ? selectedExercises
-      : exercises.filter(
-          (exercise) =>
-            allowed(exercise) &&
-            !usedExerciseIds.has(exercise.id) &&
-            exercise.movementType !== "CARDIO" &&
-            exercise.movementType !== "MOBILITY"
-        );
+      : equipmentMatch.length
+        ? equipmentMatch
+        : libraryMatch;
+
+    if (uniqueExercises !== selectedExercises && selectedExercises.length === 0) {
+      console.log(
+        `[ai:template] day ${dayIndex + 1} (${muscleGroup}) had no equipment match, using libraryMatch=${uniqueExercises.length}`
+      );
+    }
 
     for (const exercise of uniqueExercises) {
       usedExerciseIds.add(exercise.id);
