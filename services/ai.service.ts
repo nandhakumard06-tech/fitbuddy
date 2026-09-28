@@ -122,10 +122,17 @@ export async function generatePlan(user: User, profile: SafeProfile): Promise<Ge
 
     const validated = await enforcePlanRules(user, aiPlan);
     const plan = await storePlan(user.id, validated, "AI", profile.goal);
+    console.log(`[ai] plan generated via AI user=${user.id} planId=${plan.id}`);
     return { plan: summarizePlan(plan), usedTemplate: false };
   } catch (error) {
-    await recordAiGeneration(user.id, "PLAN", { prompt: prompt.slice(0, 2000) }, null, false, errorMessage(error));
-    return generateTemplatePlan(user, profile, errorMessage(error), true);
+    const reason = errorMessage(error);
+    console.log(
+      `[ai] AI plan failed, falling back to template user=${user.id} reason=${reason}`
+    );
+    await recordAiGeneration(user.id, "PLAN", { prompt: prompt.slice(0, 2000) }, null, false, reason);
+    const fallback = await generateTemplatePlan(user, profile, reason, true);
+    console.log(`[ai] template fallback ok user=${user.id} planId=${fallback.plan.id}`);
+    return fallback;
   }
 }
 
@@ -400,6 +407,9 @@ export async function generateTemplatePlan(
 ): Promise<GeneratePlanResult> {
   await ensureExerciseLibrarySeeded();
   const exercises = await queryWhere<Exercise>(COLLECTIONS.exercises, []);
+  console.log(
+    `[ai:template] user=${user.id} goal=${profile.goal} daysPerWeek=${profile.daysPerWeek} equipment=[${profile.equipment.join(",")}] level=${profile.fitnessLevel} librarySize=${exercises.length} reason=${reason}`
+  );
 
   const byGroup = new Map<string, Exercise[]>();
   for (const exercise of exercises) {
@@ -476,6 +486,9 @@ export async function generateTemplatePlan(
     durationWeeks: 8,
     days: days.map(({ id: _id, ...day }) => day),
   };
+
+  const daysWithCounts = days.map((d) => `${d.name}:${d.exercises.length}`).join(" ");
+  console.log(`[ai:template] days built -> ${daysWithCounts}`);
 
   const validated = await validatePlanSafety(aiPlan, {
     validExerciseIds: new Set(exercises.map((e) => e.id)),

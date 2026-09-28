@@ -81,6 +81,11 @@ export function HttpErrorResponse(error: unknown): NextResponse {
     return toErrorResponse(400, "VALIDATION_ERROR", "Invalid JSON body.");
   }
 
+  // Unexpected errors are masked from the client, so log them server-side.
+  // On Vercel this is the only place the real cause (e.g. missing env vars)
+  // shows up, under the deployment's Runtime Logs.
+  console.error("[api] Unhandled error:", error);
+
   const message =
     process.env.NODE_ENV === "development" && error instanceof Error
       ? error.message

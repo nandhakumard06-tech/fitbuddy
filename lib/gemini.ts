@@ -61,6 +61,10 @@ export async function generateStructuredJson<S>(
   const client = getGeminiClient();
   const model = getModelName();
 
+  console.log(
+    `[gemini] start model=${model} attempt=1/${maxRetries + 1} maxOutputTokens=${maxOutputTokens} promptChars=${prompt.length}`
+  );
+
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -88,12 +92,18 @@ export async function generateStructuredJson<S>(
       const json = extractJson(text);
       const parsed: unknown = JSON.parse(json);
       const result = schema.parse(parsed);
+      console.log(`[gemini] ok attempt=${attempt + 1} responseChars=${text.length}`);
       return result;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
       const isSchemaError = error instanceof Error && "issues" in (error as object);
       lastError = error;
+
+      const status = (error as { status?: unknown })?.status;
+      console.log(
+        `[gemini] failed attempt=${attempt + 1}/${maxRetries + 1} model=${model} schemaError=${isSchemaError} status=${String(status)} error=${message}`
+      );
 
       // Non-retryable when the API key/env is misconfigured.
       if (message.includes("API key") || message.includes("is not configured")) {
